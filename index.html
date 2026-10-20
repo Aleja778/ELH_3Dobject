@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    background: linear-gradient(180deg, #e0f0f8, #c5dff0);
+    overflow: hidden;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+  }
+  #viewer-wrap {
+    width: 100%; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    position: relative;
+  }
+  model-viewer {
+    width: 100%; height: 100%;
+    background: transparent;
+    --poster-color: transparent;
+  }
+  .loading-screen {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    color: #154360; font-size: 0.9rem; z-index: 10;
+    background: linear-gradient(180deg, #e0f0f8, #c5dff0);
+    transition: opacity 0.5s;
+  }
+  .loading-screen.fade-out { opacity: 0; pointer-events: none; }
+  .spinner {
+    width: 40px; height: 40px;
+    border: 3px solid #aed6f1;
+    border-top-color: #1a5276;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-bottom: 12px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Info overlay */
+  .info-overlay {
+    position: absolute; top: 12px; left: 12px;
+    background: rgba(255,255,255,0.92);
+    backdrop-filter: blur(8px);
+    padding: 10px 16px; border-radius: 12px;
+    border: 1px solid #aed6f1;
+    z-index: 5;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 12px rgba(21,67,96,0.1);
+  }
+  .info-overlay .stage-title {
+    font-weight: 700; color: #1a3a5c; font-size: 0.95rem;
+  }
+  .info-overlay .stage-age {
+    color: #4a6fa5; font-size: 0.78rem; margin-top: 2px;
+  }
+  .info-overlay .stage-desc {
+    color: #5d6d7e; font-size: 0.75rem; margin-top: 6px;
+    line-height: 1.45; max-width: 220px;
+  }
+
+  /* Controls overlay */
+  .controls-overlay {
+    position: absolute; bottom: 12px; left: 50%;
+    transform: translateX(-50%);
+    display: flex; gap: 6px; z-index: 5;
+  }
+  .ctrl-btn {
+    background: rgba(255,255,255,0.9);
+    border: 1px solid #aed6f1; border-radius: 8px;
+    padding: 6px 12px; font-size: 0.75rem;
+    color: #1a3a5c; cursor: pointer;
+    transition: all 0.2s; font-weight: 600;
+    backdrop-filter: blur(4px);
+  }
+  .ctrl-btn:hover { background: white; border-color: #1a5276; }
+  .ctrl-btn.active { background: #1a5276; color: white; border-color: #154360; }
+
+  /* Progress bar */
+  .progress-bar {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    height: 3px; background: rgba(174,214,241,0.5);
+    z-index: 5;
+  }
+  .progress-bar-fill {
+    height: 100%; background: linear-gradient(90deg, #1a5276, #3498db);
+    width: 0%; transition: width 0.5s ease;
+  }
+</style>
+<script type="module" src="https://unpkg.com/@google/model-viewer@3.5.0/dist/model-viewer.min.js"></script>
+</head>
+<body>
+  <div id="viewer-wrap">
+    <!-- Loading screen -->
+    <div class="loading-screen" id="loadingScreen">
+      <div class="spinner"></div>
+      <div id="loadingText">Loading 3D model...</div>
+    </div>
+
+    <!-- 3D Viewer -->
+    <model-viewer
+      id="mv"
+      src="models/newborn.glb"
+      alt="3D developmental stage model"
+      camera-controls
+      auto-rotate
+      auto-rotate-delay="2000"
+      rotation-per-second="20deg"
+      shadow-intensity="1"
+      exposure="1.1"
+      camera-orbit="0deg 75deg 2.5m"
+      min-camera-orbit="auto auto 1.5m"
+      max-camera-orbit="auto auto 4m"
+      environment-image="neutral"
+      interaction-prompt="none">
+    </model-viewer>
+
+    <!-- Info overlay -->
+    <div class="info-overlay" id="infoOverlay">
+      <div class="stage-title" id="infoTitle">Newborn</div>
+      <div class="stage-age" id="infoAge">0 months</div>
+      <div class="stage-desc" id="infoDesc">The beginning of communication</div>
+    </div>
+
+    <!-- View controls -->
+    <div class="controls-overlay">
+      <button class="ctrl-btn" id="btnSide" title="Side view">Side</button>
+      <button class="ctrl-btn" id="btn34" title="3/4 view">3/4</button>
+      <button class="ctrl-btn active" id="btnFront" title="Front view">Front</button>
+    </div>
+
+    <!-- Progress bar -->
+    <div class="progress-bar">
+      <div class="progress-bar-fill" id="progressFill"></div>
+    </div>
+  </div>
+
+<script>
+  // ============================================================
+  // DATA: Stage configurations
+  // ============================================================
+  const STAGES = [
+    {
+      id: 'newborn',
+      title: 'Newborn',
+      age: '0 months',
+      model: 'models/newborn.glb',
+      desc: 'Cries to express needs, responds to sounds and voices',
+      progress: 0
+    },
+    {
+      id: '6months',
+      title: '6 Months',
+      age: '6 months',
+      model: 'models/baby_6months.glb',
+      desc: 'Babbles with different sounds and intonations',
+      progress: 20
+    },
+    {
+      id: '1year',
+      title: '1 Year',
+      age: '12 months',
+      model: 'models/toddler_1year.glb',
+      desc: 'Understands simple words and gestures like "no" and "bye-bye"',
+      progress: 40
+    },
+    {
+      id: '2years',
+      title: '2 Years',
+      age: '24 months',
+      model: 'models/child_2years.glb',
+      desc: 'Uses two-word phrases, points to objects to request them',
+      progress: 60
+    },
+    {
+      id: 'preschool',
+      title: 'Preschool',
+      age: '3-4 years',
+      model: 'models/preschool.glb',
+      desc: 'Uses simple sentences (3-4 words), asks questions, follows instructions',
+      progress: 80
+    },
+    {
+      id: 'school',
+      title: 'School Age',
+      age: '5-6 years',
+      model: 'models/school_age.glb',
+      desc: 'Engages in conversations, tells stories, understands complex instructions',
+      progress: 100
+    }
+  ];
+
+  const ORBITS = {
+    side:   '90deg 75deg 2.5m',
+    mid:    '45deg 75deg 2.5m',
+    front:  '0deg 75deg 2.5m'
+  };
+
+  // ============================================================
+  // STATE
+  // ============================================================
+  let currentStage = 0;
+  let currentOrbit = 'front';
+
+  // ============================================================
+  // DOM
+  // ============================================================
+  const mv = document.getElementById('mv');
+  const loadingScreen = document.getElementById('loadingScreen');
+  const loadingText = document.getElementById('loadingText');
+  const infoTitle = document.getElementById('infoTitle');
+  const infoAge = document.getElementById('infoAge');
+  const infoDesc = document.getElementById('infoDesc');
+  const progressFill = document.getElementById('progressFill');
+  const btnSide = document.getElementById('btnSide');
+  const btn34 = document.getElementById('btn34');
+  const btnFront = document.getElementById('btnFront');
+
+  // ============================================================
+  // FUNCTIONS
+  // ============================================================
+  function showLoading(text) {
+    loadingText.textContent = text || 'Loading 3D model...';
+    loadingScreen.classList.remove('fade-out');
+  }
+
+  function hideLoading() {
+    loadingScreen.classList.add('fade-out');
+  }
+
+  function updateInfo(stageIndex) {
+    const stage = STAGES[stageIndex];
+    infoTitle.textContent = stage.title;
+    infoAge.textContent = stage.age;
+    infoDesc.textContent = stage.desc;
+    progressFill.style.width = stage.progress + '%';
+  }
+
+  function loadStage(index) {
+    index = Math.max(0, Math.min(STAGES.length - 1, index));
+    currentStage = index;
+    const stage = STAGES[index];
+
+    showLoading('Loading ' + stage.title + '...');
+    updateInfo(index);
+
+    mv.src = stage.model;
+  }
+
+  function setOrbit(orbitKey) {
+    currentOrbit = orbitKey;
+    mv.cameraOrbit = ORBITS[orbitKey];
+
+    btnSide.classList.toggle('active', orbitKey === 'side');
+    btn34.classList.toggle('active', orbitKey === 'mid');
+    btnFront.classList.toggle('active', orbitKey === 'front');
+  }
+
+  // ============================================================
+  // EVENT LISTENERS
+  // ============================================================
+  mv.addEventListener('load', () => {
+    hideLoading();
+  });
+
+  // Fallback hide after timeout
+  setTimeout(hideLoading, 10000);
+
+  btnSide.addEventListener('click', () => setOrbit('side'));
+  btn34.addEventListener('click', () => setOrbit('mid'));
+  btnFront.addEventListener('click', () => setOrbit('front'));
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowLeft') {
+      const keys = Object.keys(ORBITS);
+      const idx = keys.indexOf(currentOrbit);
+      if (idx > 0) setOrbit(keys[idx - 1]);
+    }
+    if (e.key === 'ArrowRight') {
+      const keys = Object.keys(ORBITS);
+      const idx = keys.indexOf(currentOrbit);
+      if (idx < keys.length - 1) setOrbit(keys[idx + 1]);
+    }
+  });
+
+  // ============================================================
+  // STORYLINE BRIDGE (postMessage)
+  // ============================================================
+  window.addEventListener('message', (e) => {
+    try {
+      const data = JSON.parse(e.data);
+
+      switch (data.action) {
+        case 'changeModel':
+          // Find stage by model path
+          const stageIdx = STAGES.findIndex(s => s.model === data.model || s.model.includes(data.model));
+          if (stageIdx >= 0) loadStage(stageIdx);
+          else if (data.model) {
+            // Direct model path
+            showLoading('Loading model...');
+            mv.src = data.model;
+            if (data.orbit) mv.cameraOrbit = data.orbit;
+          }
+          break;
+
+        case 'setStage':
+          if (typeof data.stage === 'number') loadStage(data.stage);
+          break;
+
+        case 'setOrbit':
+          if (data.orbit) mv.cameraOrbit = data.orbit;
+          break;
+
+        case 'nextStage':
+          loadStage(currentStage + 1);
+          break;
+
+        case 'prevStage':
+          loadStage(currentStage - 1);
+          break;
+
+        case 'toggleAutoRotate':
+          mv.autoRotate = data.value !== false;
+          break;
+
+        case 'setTitle':
+          if (data.title) infoTitle.textContent = data.title;
+          if (data.age) infoAge.textContent = data.age;
+          if (data.desc) infoDesc.textContent = data.desc;
+          break;
+      }
+    } catch (err) {
+      // Ignore non-JSON messages
+    }
+  });
+
+  // ============================================================
+  // INIT
+  // ============================================================
+  // Parse URL params for direct configuration
+  const params = new URLSearchParams(window.location.search);
+  const stageParam = params.get('stage');
+  const orbitParam = params.get('orbit');
+
+  if (stageParam !== null) {
+    const idx = parseInt(stageParam);
+    if (!isNaN(idx)) loadStage(idx);
+  }
+  if (orbitParam && ORBITS[orbitParam]) {
+    setOrbit(orbitParam);
+  }
+
+  // Initialize
+  updateInfo(0);
+</script>
+</body>
+</html>
